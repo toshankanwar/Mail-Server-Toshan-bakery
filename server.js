@@ -1,5 +1,6 @@
+require('dotenv').config();
 const express = require('express');
-const nodemailer = require('nodemailer');
+const axios = require('axios');
 const cors = require('cors');
 
 const app = express();
@@ -7,19 +8,47 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const transporter = nodemailer.createTransport({
-  host: 'smtp.zoho.in',
-  port: 465,
-  secure: true,
-  auth: {
-    user: "contact@toshankanwar.website",
-    pass: "hR5uCDzEee1p",
-  },
-});
+// Brevo API configuration
+const BREVO_API_KEY = process.env.BREVO_API_KEY;
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
+const FROM_EMAIL = process.env.EMAIL_FROM || 'bakery@toshankanwar.website';
+const FROM_NAME = process.env.EMAIL_FROM_NAME || 'Toshan Bakery 🍰';
 
-// Welcome Email Endpoint (unchanged)
+// Helper function to send email via Brevo
+async function sendBrevoEmail(to, subject, htmlContent) {
+  try {
+    const response = await axios.post(
+      BREVO_API_URL,
+      {
+        sender: {
+          email: FROM_EMAIL,
+          name: FROM_NAME
+        },
+        to: [{ email: to }],
+        subject: subject,
+        htmlContent: htmlContent
+      },
+      {
+        headers: {
+          'api-key': BREVO_API_KEY,
+          'Content-Type': 'application/json',
+          'accept': 'application/json'
+        }
+      }
+    );
+    
+    console.log(`✅ Email sent to ${to} | Subject: ${subject}`);
+    return { success: true, messageId: response.data.messageId };
+  } catch (error) {
+    console.error(`❌ Failed to send email to ${to}:`, error.response?.data || error.message);
+    throw error;
+  }
+}
+
+// Welcome Email Endpoint
 app.post('/send-welcome-email', async (req, res) => {
   const { to, displayName } = req.body;
+  
   if (!to || !displayName) {
     return res.status(400).json({ error: 'Missing parameters' });
   }
@@ -58,22 +87,17 @@ app.post('/send-welcome-email', async (req, res) => {
   `;
 
   try {
-    await transporter.sendMail({
-      from: '"Toshan Bakery 🍰" <contact@toshankanwar.website>',
-      to,
-      subject: `Welcome to Toshan Bakery, ${displayName}!`,
-      html: htmlContent
-    });
-    res.json({ success: true });
+    await sendBrevoEmail(to, `Welcome to Toshan Bakery, ${displayName}!`, htmlContent);
+    res.json({ success: true, message: 'Welcome email sent successfully' });
   } catch (error) {
-    console.error('Email send failed:', error);
-    res.status(500).json({ error: 'Failed to send email' });
+    res.status(500).json({ error: 'Failed to send email', details: error.message });
   }
 });
 
 // Order Confirmation Email Endpoint
 app.post('/send-order-confirmation', async (req, res) => {
   const { to, name, order } = req.body;
+  
   if (!to || !name || !order) {
     return res.status(400).json({ error: 'Missing parameters' });
   }
@@ -150,20 +174,198 @@ app.post('/send-order-confirmation', async (req, res) => {
   `;
 
   try {
-    await transporter.sendMail({
-      from: '"Toshan Bakery 🍰" <contact@toshankanwar.website>',
-      to,
-      subject: `Order Confirmed - Toshan Bakery`,
-      html: htmlContent
-    });
-    res.json({ success: true });
+    await sendBrevoEmail(to, 'Order Confirmed - Toshan Bakery', htmlContent);
+    res.json({ success: true, message: 'Order confirmation email sent successfully' });
   } catch (error) {
-    console.error('Order email send failed:', error);
-    res.status(500).json({ error: 'Failed to send order confirmation email' });
+    res.status(500).json({ error: 'Failed to send order confirmation email', details: error.message });
   }
 });
 
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    service: 'Toshan Bakery Email Service',
+    brevoConfigured: !!BREVO_API_KEY,
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString()
+  });
+});
+
+// Ping endpoint (for keep-alive)
+app.get('/ping', (req, res) => {
+  res.json({
+    success: true,
+    message: 'pong',
+    timestamp: new Date().toISOString(),
+    uptime: Math.floor(process.uptime())
+  });
+});
+
+// Test email endpoint (for testing)
+app.post('/test-email', async (req, res) => {
+  const { to } = req.body;
+  
+  if (!to) {
+    return res.status(400).json({ error: 'Email address required' });
+  }
+
+  const htmlContent = `
+    <div style="font-family:Arial,sans-serif;padding:20px;background:#f5f5f5;">
+      <h1>Test Email from Toshan Bakery 🍰</h1>
+      <p>This is a test email to verify Brevo integration is working.</p>
+      <p>If you received this, the email service is configured correctly!</p>
+    </div>
+  `;
+
+  try {
+    await sendBrevoEmail(to, 'Test Email - Toshan Bakery', htmlContent);
+    res.json({ success: true, message: 'Test email sent successfully' });
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to send test email', details: error.message });
+  }
+});
+
+// ============================================
+// Self-Ping Service (Keep Render Alive)
+// ============================================
+
+let pingInterval = null;
+
+/**
+ * Self-ping function to prevent Render free tier from sleeping
+ */
+function startSelfPing() {
+  // Only run in production (on Render)
+  if (process.env.NODE_ENV !== 'production') {
+    console.log('⏭️  Self-ping disabled (development mode)');
+    return;
+  }
+
+  const PING_INTERVAL = 14 * 60 * 1000; // 14 minutes
+  const SERVER_URL = process.env.RENDER_EXTERNAL_URL || process.env.SERVER_URL;
+
+  if (!SERVER_URL) {
+    console.warn('⚠️  SERVER_URL not set. Self-ping disabled.');
+    console.warn('   Add SERVER_URL to environment variables on Render');
+    return;
+  }
+
+  console.log('🔔 Starting self-ping service...');
+  console.log(`📍 Target URL: ${SERVER_URL}/ping`);
+  console.log(`⏱️  Interval: Every 14 minutes`);
+
+  // Initial ping after 1 minute
+  setTimeout(() => {
+    performPing(SERVER_URL);
+  }, 60000);
+
+  // Regular pings every 14 minutes
+  pingInterval = setInterval(async () => {
+    performPing(SERVER_URL);
+  }, PING_INTERVAL);
+
+  console.log('✅ Self-ping service started');
+}
+
+/**
+ * Perform ping request
+ */
+async function performPing(serverUrl) {
+  try {
+    const response = await axios.get(`${serverUrl}/ping`, {
+      timeout: 10000 // 10 second timeout
+    });
+    
+    console.log(`🏓 Self-ping successful at ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`);
+    console.log(`   Uptime: ${Math.floor(response.data.uptime / 60)} minutes`);
+  } catch (error) {
+    console.error('❌ Self-ping failed:', error.message);
+  }
+}
+
+/**
+ * Stop self-ping service
+ */
+function stopSelfPing() {
+  if (pingInterval) {
+    clearInterval(pingInterval);
+    pingInterval = null;
+    console.log('🛑 Self-ping service stopped');
+  }
+}
+
+// ============================================
+// Server Initialization
+// ============================================
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`Mail server running on port ${PORT}`);
+
+const server = app.listen(PORT, () => {
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  console.log(`🍰 Toshan Bakery Mail Server`);
+  console.log(`📍 Port: ${PORT}`);
+  console.log(`📧 Email From: ${FROM_EMAIL}`);
+  console.log(`🔑 Brevo API: ${BREVO_API_KEY ? '✅ Configured' : '❌ Not configured'}`);
+  console.log(`🌍 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+  
+  // Start self-ping service
+  startSelfPing();
+});
+
+// ============================================
+// Graceful Shutdown Handlers
+// ============================================
+
+/**
+ * SIGTERM handler (graceful shutdown)
+ */
+process.on('SIGTERM', () => {
+  console.log('\n🛑 SIGTERM signal received');
+  console.log('📦 Closing server...');
+  
+  stopSelfPing();
+  
+  server.close(() => {
+    console.log('✅ Server closed gracefully');
+    process.exit(0);
+  });
+});
+
+/**
+ * SIGINT handler (Ctrl+C)
+ */
+process.on('SIGINT', () => {
+  console.log('\n🛑 SIGINT signal received (Ctrl+C)');
+  console.log('📦 Closing server...');
+  
+  stopSelfPing();
+  
+  server.close(() => {
+    console.log('✅ Server closed gracefully');
+    process.exit(0);
+  });
+});
+
+/**
+ * Handle uncaught exceptions
+ */
+process.on('uncaughtException', (err) => {
+  console.error('❌ Uncaught Exception:', err.message);
+  console.error(err.stack);
+  
+  stopSelfPing();
+  process.exit(1);
+});
+
+/**
+ * Handle unhandled promise rejections
+ */
+process.on('unhandledRejection', (err) => {
+  console.error('❌ Unhandled Promise Rejection:', err.message);
+  console.error(err.stack);
+  
+  stopSelfPing();
+  process.exit(1);
 });
