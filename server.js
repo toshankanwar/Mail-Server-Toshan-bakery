@@ -62,7 +62,7 @@ app.post('/send-welcome-email', async (req, res) => {
         <p style="font-size:1.1rem;color:#333;">Hi <strong>${displayName}</strong>,</p>
         <p>We're thrilled to welcome you to <strong>Toshan Bakery</strong> – the most famous local bakery in Raipur!</p>
         <p>
-          <a href="https://bakery.toshankanwar.website/shop" 
+          <a href="https://bakery.toshankanwar.in/shop" 
              style="display:inline-block;margin:16px 0;padding:12px 24px;background:#4CAF50;color:#fff;text-decoration:none;border-radius:6px;font-weight:bold;">
             Visit Our Shop &rarr;
           </a>
@@ -71,11 +71,11 @@ app.post('/send-welcome-email', async (req, res) => {
         <ul style="color:#444;font-size:1rem;">
           <li>
             Browse our shop: 
-            <a href="https://bakery.toshankanwar.website/shop" style="color:#4CAF50;">bakery.toshankanwar.website/shop</a>
+            <a href="https://bakery.toshankanwar.in/shop" style="color:#4CAF50;">bakery.toshankanwar.in/shop</a>
           </li>
           <li>
             Email us: 
-            <a href="mailto:contact@toshankanwar.website" style="color:#4CAF50;">contact@toshankanwar.website</a>
+            <a href="mailto:contact@toshankanwar.in" style="color:#4CAF50;">contact@toshankanwar.in</a>
           </li>
         </ul>
         <p style="margin-top:32px;color:#555;">Happy shopping,<br/>🍰 Toshan Bakery Team</p>
@@ -163,7 +163,7 @@ app.post('/send-order-confirmation', async (req, res) => {
         </p>
         <p style="margin-top:24px;">
           You can check your order status from your 
-          <a href="https://bakery.toshankanwar.website/orders" style="color:#4CAF50;text-decoration:underline;">Order History</a>.
+          <a href="https://bakery.toshankanwar.in/orders" style="color:#4CAF50;text-decoration:underline;">Order History</a>.
         </p>
         <p style="margin-top:32px;color:#555;">Thank you for choosing Toshan Bakery!<br/>— Toshan Bakery Team</p>
       </div>
